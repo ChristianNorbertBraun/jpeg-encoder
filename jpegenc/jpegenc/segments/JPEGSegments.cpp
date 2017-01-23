@@ -42,11 +42,20 @@ void StartOfFrame0::addToStream(Bitstream &stream) {
 	stream.add(width, 16);
 	stream.add(numberOfComponents, 8);
     
-    for (int i = 1; i <= numberOfComponents; ++i) {
-        stream.add(i, 8);    // ID
-        stream.add(0x11, 8); // Subsampling
-        stream.add(i != 1, 8);
-    }
+    // Y
+    stream.add(1, 8);    // ID
+    stream.add(useSubSampling ? 0x22 : 0x22, 8); // Subsampling
+    stream.add(0, 8);
+    
+    // Cb
+    stream.add(2, 8);    // ID
+    stream.add(0x11, 8); // Subsampling
+    stream.add(1, 8);
+    
+    // Cr
+    stream.add(3, 8);    // ID
+    stream.add(0x11, 8); // Subsampling
+    stream.add(1, 8);
 }
 
 void EndOfImage::addToStream(Bitstream &stream) {
@@ -170,8 +179,6 @@ void StartOfScan::addToStream(Bitstream &stream) {
 			addToStreamNoFF(stream, encodedImageData->Y_DC_encoding.at(i));
 		}
 		
-		
-		
         // Y_AC
         int written_AC = 0;
         for (; encodedImageData->Y_AC_byteReps[k_y] != 0; ++k_y)
@@ -188,60 +195,62 @@ void StartOfScan::addToStream(Bitstream &stream) {
 			addToStreamNoFF(stream,encodedImageData->Y_AC.at(0));
 		}
         ++k_y;
-		
-		
         
-        // Cb_DC
-        index = encodedImageData->Cb_DC_encoding[i].numberOfBits;
-        addToStreamNoFF(stream, encodedImageData->CbCr_DC.at(index));
-		if (index != 0) {
-			addToStreamNoFF(stream, encodedImageData->Cb_DC_encoding.at(i));
-		}
-        
-        // Cb_AC
-        written_AC = 0;
-        for (; encodedImageData->Cb_AC_byteReps[k_cb] != 0; ++k_cb)
-        {
-            index = encodedImageData->Cb_AC_byteReps[k_cb];
-            int leadingZeros = (index & 0xF0) >> 4;
-            written_AC += leadingZeros + 1;
-            addToStreamNoFF(stream, encodedImageData->CbCr_AC.at(index));
-            addToStreamNoFF(stream, encodedImageData->Cb_AC_encoding.at(k_cb));
+        if ( !useSubSampling || ((i % 4) == 3)) {
+            
+            int subsampled_index = useSubSampling ? (i / 4) : i;
+            
+            // Cb_DC
+            index = encodedImageData->Cb_DC_encoding[subsampled_index].numberOfBits;
+            addToStreamNoFF(stream, encodedImageData->CbCr_DC.at(index));
+            if (index != 0) {
+                addToStreamNoFF(stream, encodedImageData->Cb_DC_encoding.at(subsampled_index));
+            }
+            
+            // Cb_AC
+            written_AC = 0;
+            for (; encodedImageData->Cb_AC_byteReps[k_cb] != 0; ++k_cb)
+            {
+                index = encodedImageData->Cb_AC_byteReps[k_cb];
+                int leadingZeros = (index & 0xF0) >> 4;
+                written_AC += leadingZeros + 1;
+                addToStreamNoFF(stream, encodedImageData->CbCr_AC.at(index));
+                addToStreamNoFF(stream, encodedImageData->Cb_AC_encoding.at(k_cb));
+            }
+            if (written_AC < 63) {
+                addToStreamNoFF(stream, encodedImageData->CbCr_AC.at(0));
+            }
+            ++k_cb;
+            
+            // Cr_DC
+            index = encodedImageData->Cr_DC_encoding[subsampled_index].numberOfBits;
+            addToStreamNoFF(stream, encodedImageData->CbCr_DC.at(index));
+            if (index != 0) {
+                addToStreamNoFF(stream, encodedImageData->Cr_DC_encoding.at(subsampled_index));
+            }
+            
+            // Cr_AC
+            written_AC = 0;
+            for (; encodedImageData->Cr_AC_byteReps[k_cr] != 0; ++k_cr)
+            {
+                index = encodedImageData->Cr_AC_byteReps[k_cr];
+                int leadingZeros = (index & 0xF0) >> 4;
+                written_AC += leadingZeros + 1;
+                addToStreamNoFF(stream, encodedImageData->CbCr_AC.at(index));
+                addToStreamNoFF(stream, encodedImageData->Cr_AC_encoding.at(k_cr));
+            }
+            if (written_AC < 63) {
+                addToStreamNoFF(stream, encodedImageData->CbCr_AC.at(0));
+            }
+            ++k_cr;
         }
-        if (written_AC < 63) {
-			addToStreamNoFF(stream, encodedImageData->CbCr_AC.at(0));
-        }
-        ++k_cb;
-
-        
-        // Cr_DC
-        index = encodedImageData->Cr_DC_encoding[i].numberOfBits;
-        addToStreamNoFF(stream, encodedImageData->CbCr_DC.at(index));
-		if (index != 0) {
-			addToStreamNoFF(stream, encodedImageData->Cr_DC_encoding.at(i));
-		}
-
-        // Cr_AC
-        written_AC = 0;
-        for (; encodedImageData->Cr_AC_byteReps[k_cr] != 0; ++k_cr)
-        {
-            index = encodedImageData->Cr_AC_byteReps[k_cr];
-            int leadingZeros = (index & 0xF0) >> 4;
-            written_AC += leadingZeros + 1;
-            addToStreamNoFF(stream, encodedImageData->CbCr_AC.at(index));
-            addToStreamNoFF(stream, encodedImageData->Cr_AC_encoding.at(k_cr));
-        }
-        if (written_AC < 63) {
-           addToStreamNoFF(stream, encodedImageData->CbCr_AC.at(0));
-        }
-        ++k_cr;
     }
 
 	auto bitsToFill = stream.numberOfBits() % 8 == 0 ? 0 : 8 - (stream.numberOfBits() % 8);
     stream.add(0xFFF, bitsToFill);
 }
 
-void JPEGWriter::writeJPEGImage(const char *pathToFile) {    
+void JPEGWriter::writeJPEGImage(const char *pathToFile, bool useSubSampling) {
     StartOfImage* soi = new StartOfImage();
     soi->addToStream(stream);
     
@@ -254,10 +263,17 @@ void JPEGWriter::writeJPEGImage(const char *pathToFile) {
     DefineQuantizationTable* cbcr_dqt = new DefineQuantizationTable(1, chrominanceQT);
     cbcr_dqt->addToStream(stream);
     
-    StartOfFrame0* sof0 = new StartOfFrame0(3, image);
+    StartOfFrame0* sof0 = new StartOfFrame0(3, image, useSubSampling);
     sof0->addToStream(stream);
-	
+    
+    if ( useSubSampling )
+    {
+        image->channel2->reduceBySubSampling(2, 2);
+        image->channel3->reduceBySubSampling(2, 2);
+    }
+
     ChannelData* channelData= new ChannelData(image);
+    
     EncodedImageData *encodedImageData = new EncodedImageData(channelData);
     encodedImageData->initialize();
     
@@ -273,7 +289,7 @@ void JPEGWriter::writeJPEGImage(const char *pathToFile) {
     DefineHuffmanTable* CbCr_AC_dht = new DefineHuffmanTable(1, 1, encodedImageData->CbCr_AC);
     CbCr_AC_dht->addToStream(stream);
 	
-    StartOfScan* sos = new StartOfScan(3, encodedImageData);
+    StartOfScan* sos = new StartOfScan(3, encodedImageData, useSubSampling);
     sos->addToStream(stream);
     
     EndOfImage* eoi = new EndOfImage();

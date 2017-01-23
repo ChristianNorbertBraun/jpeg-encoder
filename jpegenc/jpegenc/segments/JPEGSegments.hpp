@@ -62,16 +62,19 @@ namespace JPEGSegments {
 		uint16_t height;
 		uint16_t width;
 		std::shared_ptr<Image> image;
+        bool useSubSampling;
 		
 		StartOfFrame0(unsigned char numberOfComponents,
 					  std::shared_ptr<Image> image,
+                      bool useSubSampling,
 					  unsigned char precision = 8)
 		: JpegSegment(0xFFC0) {
 			this->numberOfComponents = numberOfComponents;
 			this->image = image;
 			this->width = (uint16_t)(image->imageSize.width);
 			this->height = (uint16_t)(image->imageSize.height);
-			this->precision = precision;
+            this->useSubSampling = useSubSampling;
+            this->precision = precision;
 			this->length = (uint16_t)(numberOfComponents * 3 + 8);
 		}
 		
@@ -173,11 +176,14 @@ namespace JPEGSegments {
 		unsigned short ffCounter = 0;
 		unsigned int buffer = 0;
 		unsigned int bufferIndex = 0;
+        
+        bool useSubSampling;
 		
-		StartOfScan(uint8_t numberOfComponents, EncodedImageData *encodedImageData) : JpegSegment(0xFFDA) {
+		StartOfScan(uint8_t numberOfComponents, EncodedImageData *encodedImageData, bool useSubSampling) : JpegSegment(0xFFDA) {
 			this->numberOfComponents = numberOfComponents;
 			this->length = 6 + 2 * numberOfComponents;
             this->encodedImageData = encodedImageData;
+            this->useSubSampling = useSubSampling;
 		}
 		virtual void addToStream(Bitstream &stream);
 		void addToStreamNoFF(Bitstream &stream, Encoding enc);
@@ -194,7 +200,7 @@ namespace JPEGSegments {
             this->image = image;
 		}
 		
-		void writeJPEGImage(const char *pathToFile);
+		void writeJPEGImage(const char *pathToFile, bool useSubSampling=false);
 	};
     
 }

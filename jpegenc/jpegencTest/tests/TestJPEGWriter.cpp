@@ -23,36 +23,36 @@ float inverseDCTTest[64] = {
 	0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0,};
 
-void printArray(float* data, int offset, int width, int height) {
-	for (int i = offset; i < offset + width * height; ++i) {
-		if (i % width == 0) {
-			std::cout << std::endl;
-		}
-		std::cout << data[i] << "\t\t\t";
-	}
-	
-	std::cout << std::endl;
-}
+//void printArray(float* data, int offset, int width, int height) {
+//	for (int i = offset; i < offset + width * height; ++i) {
+//		if (i % width == 0) {
+//			std::cout << std::endl;
+//		}
+//		std::cout << data[i] << "\t\t\t";
+//	}
+//	
+//	std::cout << std::endl;
+//}
 
-TEST_CASE("Test quantization", "[quanti]") {
-	float* testData = new float[64];
-	DCT::inverse(inverseDCTTest, testData, 8, 8);
-	
-	printArray(testData, 0, 8, 8);
-	
-	delete [] testData;
-}
+//TEST_CASE("Test quantization", "[quanti]") {
+//	float* testData = new float[64];
+//	DCT::inverse(inverseDCTTest, testData, 8, 8);
+//	
+//	printArray(testData, 0, 8, 8);
+//	
+//	delete [] testData;
+//}
 
-TEST_CASE("TestJPEGWriter", "[jpegwriter]") {
+//TEST_CASE("TestJPEGWriter", "[jpegwriter]") {
     
-	PPMLoader ppmLoader;
-	auto image = ppmLoader.load("../data/gigantic.test.ppm");
-	auto width = image->imageSize.width;
-	auto height = image->imageSize.height;
-	
-	RGBToYCbCrConverter converter;
-	converter.convert(image);
-
+//	PPMLoader ppmLoader;
+//	auto image = ppmLoader.load("../data/gigantic.test.ppm");
+//	auto width = image->imageSize.width;
+//	auto height = image->imageSize.height;
+//	
+//	RGBToYCbCrConverter converter;
+//	converter.convert(image);
+//
 	
 //	ChannelData* channelData = new ChannelData(image);
 //	channelData->unnormalize(255);
@@ -144,14 +144,15 @@ TEST_CASE("TestJPEGWriter", "[jpegwriter]") {
 ////		std::cout << std::hex << (int)byteReps3[i] << std::endl;
 ////	}
 //
-	JPEGSegments::JPEGWriter writer(image);
-	writer.writeJPEGImage("out.jpeg");
-}
+//	JPEGSegments::JPEGWriter writer(image);
+//	writer.writeJPEGImage("out.jpeg");
+//}
 
 
 TEST_CASE("Test series", "[series]") {
 	int from_image = 0;
 	int to_image   = 76;
+    bool useSubSampling = true;
 	
 	for ( int i = from_image; i <= to_image; ++i )
 	{
@@ -172,7 +173,7 @@ TEST_CASE("Test series", "[series]") {
 			converter.convert(image);
 			
 			JPEGSegments::JPEGWriter writer(image);
-			writer.writeJPEGImage(output);
+			writer.writeJPEGImage(output, useSubSampling);
 		}
 	}
 }
