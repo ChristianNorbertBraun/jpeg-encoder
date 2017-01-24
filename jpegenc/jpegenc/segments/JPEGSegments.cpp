@@ -44,18 +44,18 @@ void StartOfFrame0::addToStream(Bitstream &stream) {
     
     // Y
     stream.add(1, 8);    // ID
-    stream.add(useSubSampling ? 0x22 : 0x22, 8); // Subsampling
-    stream.add(0, 8);
+    stream.add(useSubSampling ? 0x22 : 0x11, 8); // Subsampling
+    stream.add(0, 8);    // QT
     
     // Cb
     stream.add(2, 8);    // ID
     stream.add(0x11, 8); // Subsampling
-    stream.add(1, 8);
+    stream.add(1, 8);    // QT
     
     // Cr
     stream.add(3, 8);    // ID
     stream.add(0x11, 8); // Subsampling
-    stream.add(1, 8);
+    stream.add(1, 8);    // QT
 }
 
 void EndOfImage::addToStream(Bitstream &stream) {
@@ -145,7 +145,7 @@ void DefineQuantizationTable::addToStream(Bitstream &stream) {
 }
 
 void StartOfScan::addToStream(Bitstream &stream) {
-	stream.add(type, 16);
+    stream.add(type, 16);
 	stream.add(length, 16);
 	stream.add(numberOfComponents, 8);
     stream.add(1, 8); // Y
@@ -163,48 +163,162 @@ void StartOfScan::addToStream(Bitstream &stream) {
     stream.add(0x00, 8);
     stream.add(0x3f, 8);
     stream.add(0x00, 8);
-    size_t numberOfBlocks = encodedImageData->Y_DC_encoding.size();
-	
-	
-    int k_y = 0;
-    int k_cb = 0;
-    int k_cr = 0;
-	
-    for (int i = 0; i < numberOfBlocks; ++i) {
+    
+    if ( useSubSampling ) {
+
+        // Prepare Y data bitstreams
+        size_t numberOf_Y_Blocks = encodedImageData->Y_DC_encoding.size();
+        Bitstream* y_data = new Bitstream[numberOf_Y_Blocks];
         
-        // Y_DC
-        auto index = encodedImageData->Y_DC_encoding[i].numberOfBits;
-        addToStreamNoFF(stream, encodedImageData->Y_DC.at(index));
-		if (index != 0) {
-			addToStreamNoFF(stream, encodedImageData->Y_DC_encoding.at(i));
-		}
-		
-        // Y_AC
-        int written_AC = 0;
-        for (; encodedImageData->Y_AC_byteReps[k_y] != 0; ++k_y)
-        {
-            index = encodedImageData->Y_AC_byteReps[k_y];
-            int leadingZeros = (index & 0xF0) >> 4;
-            written_AC += leadingZeros + 1;
-            addToStreamNoFF(stream, encodedImageData->Y_AC.at(index));
-            addToStreamNoFF(stream, encodedImageData->Y_AC_encoding.at(k_y));
+        int k_y = 0;
+        
+        for (size_t i = 0; i < numberOf_Y_Blocks; ++i) {
+            // Y_DC
+            auto index = encodedImageData->Y_DC_encoding[i].numberOfBits;
+            addToStreamNoFF(y_data[i], encodedImageData->Y_DC.at(index));
+            if (index != 0) {
+                addToStreamNoFF(y_data[i], encodedImageData->Y_DC_encoding.at(i));
+            }
+            
+            // Y_AC
+            int written_AC = 0;
+            for (; encodedImageData->Y_AC_byteReps[k_y] != 0; ++k_y)
+            {
+                index = encodedImageData->Y_AC_byteReps[k_y];
+                int leadingZeros = (index & 0xF0) >> 4;
+                written_AC += leadingZeros + 1;
+                addToStreamNoFF(y_data[i], encodedImageData->Y_AC.at(index));
+                addToStreamNoFF(y_data[i], encodedImageData->Y_AC_encoding.at(k_y));
+            }
+            if (written_AC < 63) {
+                // Add EOB
+                addToStreamNoFF(y_data[i],encodedImageData->Y_AC.at(0));
+            }
+            ++k_y;
         }
         
-        if (written_AC < 63) {
-            // Add EOB
-			addToStreamNoFF(stream,encodedImageData->Y_AC.at(0));
-		}
-        ++k_y;
+        // Write blocks in right order
+        size_t numberOf_CbCr_Blocks = encodedImageData->Cb_DC_encoding.size();
+        size_t numberOf_Y_BlocksPerLine = encodedImageData->Y_width / 8;
         
-        if ( !useSubSampling || ((i % 4) == 3)) {
+        for (size_t i = 0; i < numberOf_CbCr_Blocks; ++i) {
             
-            int subsampled_index = useSubSampling ? (i / 4) : i;
+            // Calculate correct 4 Y indeces
+            size_t outer_offset = (i / numberOf_Y_BlocksPerLine) * numberOf_Y_BlocksPerLine * numberOf_Y_BlocksPerLine;
+            size_t inner_offset = (i % numberOf_Y_BlocksPerLine) * 2;
+            size_t y_1 = outer_offset + inner_offset;
+            size_t y_2 = y_1 + 1;
+            
+            size_t y_3 = y_1 + numberOf_Y_BlocksPerLine * 2;
+            size_t y_4 = y_3 + 1;
+
+            // Copy y data to final bitstream
+            for (size_t m = 0; m < y_data[y_1].numberOfBits(); ++m) {
+                stream.add(y_data[y_1].read(m));
+            }
+            for (size_t m = 0; m < y_data[y_2].numberOfBits(); ++m) {
+                stream.add(y_data[y_2].read(m));
+            }
+            for (size_t m = 0; m < y_data[y_3].numberOfBits(); ++m) {
+                stream.add(y_data[y_3].read(m));
+            }
+            for (size_t m = 0; m < y_data[y_4].numberOfBits(); ++m) {
+                stream.add(y_data[y_4].read(m));
+            }
+            
+            // Add cb data
+            int k_cb = 0;
             
             // Cb_DC
-            index = encodedImageData->Cb_DC_encoding[subsampled_index].numberOfBits;
+            auto index = encodedImageData->Cb_DC_encoding[i].numberOfBits;
+            addToStreamNoFF(stream, encodedImageData->CbCr_DC.at(index));
+            
+            if (index != 0) {
+                addToStreamNoFF(stream, encodedImageData->Cb_DC_encoding.at(i));
+            }
+            
+            // Cb_AC
+            int written_AC = 0;
+            
+            for (; encodedImageData->Cb_AC_byteReps[k_cb] != 0; ++k_cb)
+            {
+                index = encodedImageData->Cb_AC_byteReps[k_cb];
+                int leadingZeros = (index & 0xF0) >> 4;
+                written_AC += leadingZeros + 1;
+                addToStreamNoFF(stream, encodedImageData->CbCr_AC.at(index));
+                addToStreamNoFF(stream, encodedImageData->Cb_AC_encoding.at(k_cb));
+            }
+            if (written_AC < 63) {
+                addToStreamNoFF(stream, encodedImageData->CbCr_AC.at(0));
+            }
+            ++k_cb;
+
+            // Add cr data
+            int k_cr = 0;
+            
+            // Cr_DC
+            index = encodedImageData->Cr_DC_encoding[i].numberOfBits;
+            addToStreamNoFF(stream, encodedImageData->CbCr_DC.at(index));
+            
+            if (index != 0) {
+                addToStreamNoFF(stream, encodedImageData->Cr_DC_encoding.at(i));
+            }
+            
+            // Cr_AC
+            written_AC = 0;
+            
+            for (; encodedImageData->Cr_AC_byteReps[k_cr] != 0; ++k_cr)
+            {
+                index = encodedImageData->Cr_AC_byteReps[k_cr];
+                int leadingZeros = (index & 0xF0) >> 4;
+                written_AC += leadingZeros + 1;
+                addToStreamNoFF(stream, encodedImageData->CbCr_AC.at(index));
+                addToStreamNoFF(stream, encodedImageData->Cr_AC_encoding.at(k_cr));
+            }
+            if (written_AC < 63) {
+                addToStreamNoFF(stream, encodedImageData->CbCr_AC.at(0));
+            }
+            ++k_cr;
+        }
+        delete[] y_data;
+    }
+    else {
+        size_t numberOfBlocks = encodedImageData->Y_DC_encoding.size();
+        
+        int k_y  = 0;
+        int k_cb = 0;
+        int k_cr = 0;
+        
+        for (int i = 0; i < numberOfBlocks; ++i) {
+            
+            // Y_DC
+            auto index = encodedImageData->Y_DC_encoding[i].numberOfBits;
+            addToStreamNoFF(stream, encodedImageData->Y_DC.at(index));
+            if (index != 0) {
+                addToStreamNoFF(stream, encodedImageData->Y_DC_encoding.at(i));
+            }
+            
+            // Y_AC
+            int written_AC = 0;
+            for (; encodedImageData->Y_AC_byteReps[k_y] != 0; ++k_y)
+            {
+                index = encodedImageData->Y_AC_byteReps[k_y];
+                int leadingZeros = (index & 0xF0) >> 4;
+                written_AC += leadingZeros + 1;
+                addToStreamNoFF(stream, encodedImageData->Y_AC.at(index));
+                addToStreamNoFF(stream, encodedImageData->Y_AC_encoding.at(k_y));
+            }
+            if (written_AC < 63) {
+                // Add EOB
+                addToStreamNoFF(stream,encodedImageData->Y_AC.at(0));
+            }
+            ++k_y;
+            
+            // Cb_DC
+            index = encodedImageData->Cb_DC_encoding[i].numberOfBits;
             addToStreamNoFF(stream, encodedImageData->CbCr_DC.at(index));
             if (index != 0) {
-                addToStreamNoFF(stream, encodedImageData->Cb_DC_encoding.at(subsampled_index));
+                addToStreamNoFF(stream, encodedImageData->Cb_DC_encoding.at(i));
             }
             
             // Cb_AC
@@ -223,10 +337,10 @@ void StartOfScan::addToStream(Bitstream &stream) {
             ++k_cb;
             
             // Cr_DC
-            index = encodedImageData->Cr_DC_encoding[subsampled_index].numberOfBits;
+            index = encodedImageData->Cr_DC_encoding[i].numberOfBits;
             addToStreamNoFF(stream, encodedImageData->CbCr_DC.at(index));
             if (index != 0) {
-                addToStreamNoFF(stream, encodedImageData->Cr_DC_encoding.at(subsampled_index));
+                addToStreamNoFF(stream, encodedImageData->Cr_DC_encoding.at(i));
             }
             
             // Cr_AC
@@ -245,7 +359,6 @@ void StartOfScan::addToStream(Bitstream &stream) {
             ++k_cr;
         }
     }
-
 	auto bitsToFill = stream.numberOfBits() % 8 == 0 ? 0 : 8 - (stream.numberOfBits() % 8);
     stream.add(0xFFF, bitsToFill);
 }
@@ -271,7 +384,7 @@ void JPEGWriter::writeJPEGImage(const char *pathToFile, bool useSubSampling) {
         image->channel2->reduceBySubSampling(2, 2);
         image->channel3->reduceBySubSampling(2, 2);
     }
-
+    
     ChannelData* channelData= new ChannelData(image);
     
     EncodedImageData *encodedImageData = new EncodedImageData(channelData);
@@ -295,7 +408,6 @@ void JPEGWriter::writeJPEGImage(const char *pathToFile, bool useSubSampling) {
     EndOfImage* eoi = new EndOfImage();
     eoi->addToStream(stream);
 	
-//	stream.print();
     stream.saveToFile(pathToFile);
 	
     delete channelData;

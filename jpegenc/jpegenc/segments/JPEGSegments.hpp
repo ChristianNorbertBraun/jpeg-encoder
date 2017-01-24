@@ -201,8 +201,7 @@ namespace JPEGSegments {
 		}
 		
 		void writeJPEGImage(const char *pathToFile, bool useSubSampling=false);
-	};
-    
+    };
 }
 
 #endif

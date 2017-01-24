@@ -164,7 +164,6 @@ TEST_CASE("Test series", "[series]") {
 		output_stream << "series/" << i << ".jpg";
 		const char* output = output_stream.str().c_str();
 		
-		std::cout << "Converting " << input << " to " << output << std::endl;
 		{
 			PPMLoader ppmLoader;
 			auto image = ppmLoader.load(input);
